@@ -1,0 +1,65 @@
+/*
+mergeMail mapeando campos para enviarlos.
+Ejemplo de una Quote.
+
+*/
+
+
+string button.mergeQuote(String id)
+{
+inventoryTemplateId = "0ajw9f6a513ede0e347978cd43444f71fb3ee";
+// 	Fields Quotes to Template 
+// 	«Quotes.Account Name» , «Quotes.Subject» «Quotes.Quote Owner»  , «Quotes.Account Name» , «Quotes.Quote Number» , «Quotes.Valid Until»  , «Quotes.Meses»
+// 	Subform Fields
+// 	«Quoted Items.Product Name» «Quoted Items.Quantity» «Quoted Items.% Tiempo asignado»   «Quoted Items.Meses» 
+// «Test Sub.Mes» «Test Sub.Total»
+quote = zoho.crm.getRecordById("Quotes",id);
+response = invokeapi
+[
+	service :zohocrm
+	path :"crm/v7/Quotes/" + id
+	type :GET
+];
+info response.toMap().get('data').get(0);
+quote = response.toMap().get('data').get(0);
+products = quote.get('Quoted_Items');
+planPago = quote.get('Test_Sub');
+for each  product in products
+{
+	product.put('Quoted_Items.Product_Name',product.get('Product_Name').get('name'));
+	product.put('Quoted_Items.Quantity',product.get('Quantity'));
+	product.put('Quoted_Items.Tiempo_asignado',product.get('Tiempo_asignado'));
+	product.put('Quoted_Items.Meses',product.get('Meses'));
+}
+for each  pago in planPago
+{
+	pago.put('Test_Sub.Mes',pago.get('Mes'));
+	pago.put('Test_Sub.Total',pago.get('Total'));
+}
+param = Map();
+param.put("merge_data",{"data":quote});
+param.put("output_settings",{"format":"docx"});
+param.put("response_type","link");
+//info quote.get('Valid_Till').toDate();
+//info toDate(quote.get('Valid_Till')  , 'yy.MM.dd');
+valid_till = quote.get("Valid_Till");
+if(valid_till != null)
+{
+	fecha_formateada = toDate(now,"yy-MM-dd").toString("yyMMdd");
+	dateQuote = fecha_formateada;
+}
+info dateQuote;
+name = dateQuote + "_" + quote.get('Account_Name').get('name') + "_" + quote.get('Subject');
+param.put("filename",name);
+info param;
+mergeDoc = invokeurl
+[
+	url :"https://www.zohoapis.com/writer/api/v1/documents/" + inventoryTemplateId + "/merge"
+	type :POST
+	parameters:param
+	connection:"write"
+];
+info mergeDoc;
+openUrl(mergeDoc.get('URL'),"new window");
+return '';
+}
