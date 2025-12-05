@@ -1,0 +1,26 @@
+/* MailMerge a Write usando el ID para mapear , opcion recomendada si crear la logica en write
+ - Ejemplo de un modolo custom.
+*/
+
+string button.DescargarContrato(String id)
+{
+inventoryTemplateId = "2nawe37531da935e345028e2f2b45e413f178";
+name = zoho.crm.getRecordById("Engagement",id).get('Name');
+param = Map();
+param.put("record_id",id);
+param.put("output_settings",{"format":"docx"});
+param.put("response_type","link");
+
+param.put("filename","Contrato - " + name);
+info param;
+mergeDoc = invokeurl
+[
+	url :"https://www.zohoapis.com/writer/api/v1/documents/" + inventoryTemplateId + "/merge"
+	type :POST
+	parameters:param
+	connection:"zoho"
+];
+info mergeDoc;
+openUrl(mergeDoc.get('URL'),"new window");
+return '';
+}
