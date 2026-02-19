@@ -1,0 +1,31 @@
+
+Crear proyecto de zoho
+
+comando:  zet init
+*nombre del proyecto en minusculas*
+
+//---------------------------------------------------
+
+Crear proyecto de Vue haciendole merge con el de zoho
+*fuera de la carpeta de zoho*
+
+comando: 
+vue create --merge "mismo nombre del proyecto de zoho"
+
+//---------------------------------------------------
+**Opcional
+comando: vue add vuetify
+Reccommended
+
+//---------------------------------------------------
+Ir a carpeta del proyecto a vue.config.js y pegar :
+, 
+  publicPath: '',
+  outputDir: 'app'
+despues de "transpileDependencies"
+//-------------------------------------------------------
+* Agregar a la carpeta publica en el <head>
+<script src="https://live.zwidgets.com/js-sdk/1.1/ZohoEmbededAppSDK.min.js"></script>
+
+//-------------------------------------------------------
+eliminar carpeta app
