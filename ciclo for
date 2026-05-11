@@ -1,0 +1,13 @@
+n = 5;
+
+// Genera una cadena con espacios
+str = leftpad("", n - 1);
+
+// Convierte espacios en "0,"
+lst = str.replaceAll(" ", "0,").toList();
+
+// Loop n veces
+for each index i in lst
+{
+	info i;
+}
