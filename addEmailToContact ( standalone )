@@ -1,0 +1,221 @@
+string standalone.addEmailToContact(String crmAPIRequest)
+{
+requestMap = crmAPIRequest.toMap();
+bodyMap = requestMap.get("body").toMap();
+event_type = bodyMap.get("event_type");
+// ── Only process replies; ignore sends and any other event ──
+if(event_type != "EMAIL_REPLY")
+{
+	info {"status":"skipped","reason":"event_type is not EMAIL_REPLY"};
+	return {"status":"skipped","reason":"event_type is not EMAIL_REPLY"};
+}
+toEmail = bodyMap.get("to_email").toString();
+fromEmail = bodyMap.get("from_email").toString();
+toName = bodyMap.get("to_name").toString();
+subject = bodyMap.get("subject").toString();
+eventTime = bodyMap.get("event_timestamp").toString();
+coincidence = null;
+// ── Find Contact / Lead, or create a new Lead ──
+response = zoho.crm.searchRecords("Contacts","(Email:equals:" + toEmail + ")");
+if(response.size() == 1)
+{
+	// Exactly one Contact match: use it
+	contactId = response.get(0).get('id');
+	coincidence = 'Contacts';
+	c = 'contacts';
+}
+else if(response.size() > 1)
+{
+	// Multiple Contact matches: pick the oldest by Created_Time
+	oldest = response.get(0);
+	oldestDate = response.get(0).get('Created_Time').toDateTime();
+	for each  rec in response
+	{
+		recDate = rec.get('Created_Time').toDateTime();
+		if(recDate < oldestDate)
+		{
+			oldest = rec;
+			oldestDate = recDate;
+		}
+	}
+	c = 'contacts oldest';
+	contactId = oldest.get('id');
+	coincidence = 'Contacts';
+}
+else
+{
+	// No Contact match: try Leads
+	responseLead = zoho.crm.searchRecords("Leads","(Email:equals:" + toEmail + ")");
+	if(responseLead.size() == 1)
+	{
+		// Exactly one Lead match: use it
+		leadId = responseLead.get(0).get('id');
+		coincidence = 'Leads';
+		c = 'lead';
+	}
+	else if(responseLead.size() > 1)
+	{
+		// Multiple Lead matches: pick the oldest by Created_Time
+		oldest = responseLead.get(0);
+		oldestDate = responseLead.get(0).get('Created_Time').toDateTime();
+		for each  lead in responseLead
+		{
+			leadDate = lead.get('Created_Time').toDateTime();
+			if(leadDate < oldestDate)
+			{
+				oldest = lead;
+				oldestDate = leadDate;
+			}
+		}
+		c = 'lead oldest';
+		leadId = oldest.get('id');
+		coincidence = 'Leads';
+	}
+	else
+	{
+		// ── No match anywhere: enrich from Smartlead and create a new Lead ──
+		newLead = Map();
+		newLead.put('Email',toEmail);
+		newLead.put('Last_Name',toName);
+		newLead.put("Owner",7192070000001090001);
+		// ── Smartlead: fetch lead by email ──
+		apiKey = "ec81c105-1c9c-470d-a3a5-1f5145c0072a_an13h2a";
+		url = "https://server.smartlead.ai/api/v1/leads/?api_key=" + apiKey + "&email=" + toEmail;
+		smartleadResponse = invokeurl
+		[
+			url :url
+			type :GET
+		];
+		info smartleadResponse;
+		// Parse Smartlead response and enrich the new Lead
+		if(smartleadResponse != null && smartleadResponse.toString() != "" && !smartleadResponse.isEmpty())
+		{
+			smartleadLead = smartleadResponse.toMap();
+			if(smartleadLead != null && !smartleadLead.isEmpty())
+			{
+				// ── Top-level fields ──
+				// First name
+				if(smartleadLead.containsKey("first_name") && smartleadLead.get("first_name") != null && smartleadLead.get("first_name").toString() != "")
+				{
+					newLead.put("First_Name",smartleadLead.get("first_name").toString());
+				}
+				// Last name (override the to_name fallback if Smartlead has it)
+				if(smartleadLead.containsKey("last_name") && smartleadLead.get("last_name") != null && smartleadLead.get("last_name").toString() != "")
+				{
+					newLead.put("Last_Name",smartleadLead.get("last_name").toString());
+				}
+				// Company name
+				if(smartleadLead.containsKey("company_name") && smartleadLead.get("company_name") != null && smartleadLead.get("company_name").toString() != "")
+				{
+					newLead.put("Company",smartleadLead.get("company_name").toString());
+				}
+				if(smartleadLead.containsKey("location") && smartleadLead.get("location") != null && smartleadLead.get("location").toString() != "")
+				{
+					newLead.put("State",smartleadLead.get("location").toString());
+				}
+				// ── Custom fields (all optional; validate existence and non-empty) ──
+				cityFromCustom = false;
+				if(smartleadLead.containsKey("custom_fields") && smartleadLead.get("custom_fields") != null)
+				{
+					customFields = smartleadLead.get("custom_fields").toMap();
+					// City (prefer custom_fields.city if present)
+					if(customFields.containsKey("city") && customFields.get("city") != null && customFields.get("city").toString() != "")
+					{
+						newLead.put("City",customFields.get("city").toString());
+					}
+					// State (only from custom_fields.state if present)
+					if(customFields.containsKey("location") && customFields.get("location") != null && customFields.get("location").toString() != "")
+					{
+						newLead.put("State",customFields.get("location").toString());
+					}
+					// Titles -> Designation
+					if(customFields.containsKey("titles") && customFields.get("titles") != null && customFields.get("titles").toString() != "")
+					{
+						newLead.put("Designation",customFields.get("titles").toString());
+					}
+					// Campaign name -> lookup against Campaigns_Smartlead module
+					if(customFields.containsKey("campaign_name") && customFields.get("campaign_name") != null && customFields.get("campaign_name").toString() != "")
+					{
+						campaign = zoho.crm.searchRecords("Campaigns_Smartlead","(Name:equals:" + customFields.get("campaign_name").toString() + ")");
+						if(!campaign.isEmpty())
+						{
+							newLead.put("Campaign_Smartlead",campaign.get(0).get('id'));
+						}
+						else
+						{
+							info ('Campaign Not Found : ' + customFields.get("campaign_name").toString());
+						}
+					}
+				}
+			}
+		}
+		createres = zoho.crm.createRecord("Leads",newLead);
+		c = 'new';
+		info createres;
+		leadId = createres.get('id');
+		coincidence = 'Leads';
+	}
+}
+// ── Reply data (subject, message id, html content) ──
+subject = 'RE: ' + subject;
+messageId = bodyMap.get("reply_message").toMap().get("message_id").toString() + 73891;
+content = bodyMap.get("reply_message").toMap().get("html").toString();
+// from = the person who replied (the lead/contact)
+fromObj = Map();
+fromObj.put("user_name",toName);
+fromObj.put("email",toEmail);
+// to = the mailbox that originally sent the email
+toObj = Map();
+toObj.put("email",fromEmail);
+toList = List();
+toList.add(toObj);
+// emailData payload for the associate_email API
+emailData = Map();
+emailData.put("sent",false);
+emailData.put("from",fromObj);
+emailData.put("to",toList);
+emailData.put("subject",subject);
+emailData.put("content",content);
+emailData.put("mail_format","html");
+emailData.put("date_time",eventTime);
+emailData.put("original_message_id",messageId);
+// Wrap into the Emails list expected by the endpoint
+emailsList = List();
+emailsList.add(emailData);
+body = Map();
+body.put("Emails",emailsList);
+// headers
+headers = Map();
+headers.put("Content-Type","application/json");
+// ── Call associate_email on the matched module (Contacts or Leads) ──
+if(coincidence == 'Contacts')
+{
+	response = invokeurl
+	[
+		url :"https://www.zohoapis.com/crm/v8/Contacts/" + contactId + "/actions/associate_email"
+		type :POST
+		parameters:body.toString()
+		headers:headers
+		connection:"crmemail"
+	];
+	info response;
+}
+else if(coincidence == 'Leads')
+{
+	response = invokeurl
+	[
+		url :"https://www.zohoapis.com/crm/v8/Leads/" + leadId + "/actions/associate_email"
+		type :POST
+		parameters:body.toString()
+		headers:headers
+		connection:"crmemail"
+	];
+	info response;
+}
+else
+{
+	info 'ERROR';
+	return 'ERROR';
+}
+return response.toString();
+}
